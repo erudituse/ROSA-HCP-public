@@ -1,0 +1,84 @@
+###############################################################################
+# OpenShift Cluster Logging Instance
+# Configures log collection and forwarding
+###############################################################################
+
+# LokiStack for log storage (using AWS S3)
+apiVersion: loki.grafana.com/v1
+kind: LokiStack
+metadata:
+  name: logging-loki
+  namespace: openshift-logging
+spec:
+  size: 1x.small
+  storage:
+    schemas:
+      - version: v12
+        effectiveDate: "2022-06-01"
+    secret:
+      name: logging-loki-s3
+      type: s3
+  storageClassName: gp3-csi
+  tenants:
+    mode: openshift-logging
+
+---
+# Secret for S3 bucket (to be created manually or via External Secrets)
+# This is a placeholder - replace with actual S3 configuration
+apiVersion: v1
+kind: Secret
+metadata:
+  name: logging-loki-s3
+  namespace: openshift-logging
+type: Opaque
+stringData:
+  # Update these values with your S3 bucket details
+  # Recommended: Use External Secrets to sync from AWS Secrets Manager
+  bucketnames: "your-loki-bucket"
+  endpoint: "https://s3.us-east-1.amazonaws.com"
+  region: "us-east-1"
+  access_key_id: "REPLACE_WITH_ACCESS_KEY"
+  access_key_secret: "REPLACE_WITH_SECRET_KEY"
+
+---
+# ClusterLogging instance
+apiVersion: logging.openshift.io/v1
+kind: ClusterLogging
+metadata:
+  name: instance
+  namespace: openshift-logging
+spec:
+  managementState: Managed
+  logStore:
+    type: lokistack
+    lokistack:
+      name: logging-loki
+  collection:
+    type: vector
+
+---
+# ClusterLogForwarder for log routing
+apiVersion: logging.openshift.io/v1
+kind: ClusterLogForwarder
+metadata:
+  name: instance
+  namespace: openshift-logging
+spec:
+  pipelines:
+    - name: all-to-default
+      inputRefs:
+        - application
+        - infrastructure
+        - audit
+      outputRefs:
+        - default
+  outputs:
+    - name: default
+      type: lokiStack
+      lokiStack:
+        target:
+          name: logging-loki
+          namespace: openshift-logging
+        authentication:
+          token:
+            from: serviceAccount

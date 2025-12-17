@@ -1,0 +1,151 @@
+###############################################################################
+# OADP - Data Protection Application (DPA)
+# Configures Velero for backup/restore using AWS S3
+###############################################################################
+
+# Secret for AWS credentials (use External Secrets in production)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cloud-credentials
+  namespace: openshift-adp
+type: Opaque
+stringData:
+  cloud: |
+    [default]
+    aws_access_key_id=REPLACE_WITH_ACCESS_KEY
+    aws_secret_access_key=REPLACE_WITH_SECRET_KEY
+
+---
+# DataProtectionApplication instance
+apiVersion: oadp.openshift.io/v1alpha1
+kind: DataProtectionApplication
+metadata:
+  name: velero-dpa
+  namespace: openshift-adp
+spec:
+  features:
+    dataMover:
+      enable: true
+      credentialName: cloud-credentials
+  backupLocations:
+    - name: default
+      velero:
+        provider: aws
+        default: true
+        objectStorage:
+          bucket: your-velero-backup-bucket  # Update with your S3 bucket
+          prefix: velero
+        config:
+          region: us-east-1  # Update to your region
+          profile: default
+        credential:
+          key: cloud
+          name: cloud-credentials
+  snapshotLocations:
+    - name: default
+      velero:
+        provider: aws
+        config:
+          region: us-east-1  # Update to your region
+          profile: default
+  configuration:
+    velero:
+      defaultPlugins:
+        - openshift
+        - aws
+        - csi
+      resourceTimeout: 10m
+    restic:
+      enable: true
+      podConfig:
+        resourceAllocations:
+          limits:
+            cpu: "1"
+            memory: 4Gi
+          requests:
+            cpu: 500m
+            memory: 256Mi
+    nodeAgent:
+      enable: true
+      uploaderType: kopia
+
+---
+###############################################################################
+# Example: Scheduled Backup
+###############################################################################
+# apiVersion: velero.io/v1
+# kind: Schedule
+# metadata:
+#   name: daily-backup
+#   namespace: openshift-adp
+# spec:
+#   schedule: "0 2 * * *"  # Daily at 2 AM
+#   template:
+#     includedNamespaces:
+#       - "*"
+#     excludedNamespaces:
+#       - openshift-*
+#       - kube-*
+#     storageLocation: default
+#     volumeSnapshotLocations:
+#       - default
+#     ttl: 720h  # 30 days retention
+#     includeClusterResources: true
+
+---
+###############################################################################
+# Example: On-demand Backup
+###############################################################################
+# apiVersion: velero.io/v1
+# kind: Backup
+# metadata:
+#   name: manual-backup-2024
+#   namespace: openshift-adp
+# spec:
+#   includedNamespaces:
+#     - my-app
+#   storageLocation: default
+#   volumeSnapshotLocations:
+#     - default
+#   ttl: 720h
+
+---
+###############################################################################
+# IAM Policy for OADP (reference - create via Terraform/ClickOps)
+###############################################################################
+# {
+#   "Version": "2012-10-17",
+#   "Statement": [
+#     {
+#       "Effect": "Allow",
+#       "Action": [
+#         "ec2:DescribeVolumes",
+#         "ec2:DescribeSnapshots",
+#         "ec2:CreateTags",
+#         "ec2:CreateVolume",
+#         "ec2:CreateSnapshot",
+#         "ec2:DeleteSnapshot"
+#       ],
+#       "Resource": "*"
+#     },
+#     {
+#       "Effect": "Allow",
+#       "Action": [
+#         "s3:GetObject",
+#         "s3:DeleteObject",
+#         "s3:PutObject",
+#         "s3:AbortMultipartUpload",
+#         "s3:ListMultipartUploadParts"
+#       ],
+#       "Resource": "arn:aws:s3:::your-velero-backup-bucket/*"
+#     },
+#     {
+#       "Effect": "Allow",
+#       "Action": [
+#         "s3:ListBucket"
+#       ],
+#       "Resource": "arn:aws:s3:::your-velero-backup-bucket"
+#     }
+#   ]
+# }

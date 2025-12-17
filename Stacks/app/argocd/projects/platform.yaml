@@ -1,0 +1,62 @@
+###############################################################################
+# ArgoCD Project: Platform
+# Defines the platform project for core infrastructure applications
+###############################################################################
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: platform
+  namespace: openshift-gitops
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  description: "Platform infrastructure applications"
+
+  # Source repositories allowed for this project
+  sourceRepos:
+    - '*'  # Allow all repos - restrict in production
+
+  # Destination clusters and namespaces
+  destinations:
+    # Allow deployment to any namespace on the local cluster
+    - namespace: '*'
+      server: https://kubernetes.default.svc
+
+  # Cluster resources that can be managed
+  clusterResourceWhitelist:
+    - group: '*'
+      kind: '*'
+
+  # Namespace resources that can be managed
+  namespaceResourceWhitelist:
+    - group: '*'
+      kind: '*'
+
+  # Roles for this project
+  roles:
+    - name: admin
+      description: "Full access to platform project"
+      policies:
+        - p, proj:platform:admin, applications, *, platform/*, allow
+      groups:
+        - system:cluster-admins
+        - cluster-admins
+
+    - name: read-only
+      description: "Read-only access to platform project"
+      policies:
+        - p, proj:platform:read-only, applications, get, platform/*, allow
+      groups:
+        - developers
+
+  # Sync windows (optional - restrict when syncs can occur)
+  # syncWindows:
+  #   - kind: allow
+  #     schedule: '0 * * * *'
+  #     duration: 1h
+  #     applications:
+  #       - '*'
+
+  # Orphaned resources monitoring
+  orphanedResources:
+    warn: true

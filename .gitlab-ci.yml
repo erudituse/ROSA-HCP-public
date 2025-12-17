@@ -1,0 +1,202 @@
+###############################################################################
+# ROSA HCP Infrastructure Pipeline
+# GitLab CI/CD Pipeline for deploying ROSA HCP cluster with ArgoCD
+###############################################################################
+
+stages:
+  - validate
+  - plan
+  - apply-infra
+  - apply-cluster
+  - apply-ack-roles
+  - bootstrap
+  - gitops
+
+variables:
+  TF_ROOT: "Stacks/infra"
+  TF_VAR_FILE: "../config/${ENV}.tfvars"
+  TF_STATE_NAME: "${ENV}"
+  # AWS credentials should be set in GitLab CI/CD variables
+  # AWS_ACCESS_KEY_ID: ""
+  # AWS_SECRET_ACCESS_KEY: ""
+  # RHCS_TOKEN: "" # Red Hat Cloud Services token
+
+image:
+  name: hashicorp/terraform:1.6
+  entrypoint: [""]
+
+cache:
+  key: "${CI_COMMIT_REF_SLUG}"
+  paths:
+    - ${TF_ROOT}/.terraform/
+
+before_script:
+  - cd ${TF_ROOT}
+  - terraform --version
+  - terraform init -backend-config="key=${TF_STATE_NAME}/terraform.tfstate"
+
+###############################################################################
+# Stage 1: Validate
+###############################################################################
+.validate_template: &validate_template
+  stage: validate
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+fmt-check:
+  <<: *validate_template
+  script:
+    - terraform fmt -check -recursive -diff
+  allow_failure: true
+
+validate:
+  <<: *validate_template
+  script:
+    - terraform validate
+
+tflint:
+  <<: *validate_template
+  image: ghcr.io/terraform-linters/tflint:latest
+  before_script:
+    - cd ${TF_ROOT}
+    - tflint --init
+  script:
+    - tflint --recursive
+  allow_failure: true
+
+###############################################################################
+# Stage 2: Plan
+###############################################################################
+plan:
+  stage: plan
+  script:
+    - terraform plan -var-file=${TF_VAR_FILE} -out=tfplan
+  artifacts:
+    name: "terraform-plan-${ENV}"
+    paths:
+      - ${TF_ROOT}/tfplan
+    expire_in: 7 days
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: manual
+
+###############################################################################
+# Stage 3: Apply VPC Infrastructure
+###############################################################################
+apply-vpc:
+  stage: apply-infra
+  script:
+    - terraform apply -target=module.vpc -var-file=${TF_VAR_FILE} -auto-approve
+  dependencies:
+    - plan
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: manual
+  environment:
+    name: ${ENV}
+    action: start
+
+###############################################################################
+# Stage 4: Apply HCP Cluster
+###############################################################################
+apply-hcp-cluster:
+  stage: apply-cluster
+  script:
+    - terraform apply -target=module.hcp_cluster -var-file=${TF_VAR_FILE} -auto-approve
+    - |
+      echo "Waiting for cluster to be ready..."
+      cd ${CI_PROJECT_DIR}
+      chmod +x scripts/wait-for-cluster.sh
+      ./scripts/wait-for-cluster.sh
+  needs:
+    - job: apply-vpc
+      artifacts: false
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: manual
+  timeout: 60m
+  environment:
+    name: ${ENV}
+
+###############################################################################
+# Stage 5: Apply ACK IAM Roles
+###############################################################################
+apply-ack-iam-roles:
+  stage: apply-ack-roles
+  script:
+    - terraform apply -target=module.ack_iam_roles -var-file=${TF_VAR_FILE} -auto-approve
+    - |
+      # Output the role ARNs for reference
+      echo "ACK-IAM Controller Role ARN:"
+      terraform output -raw ack_iam_controller_role_arn
+      echo ""
+      echo "ACK-RDS Controller Role ARN:"
+      terraform output -raw ack_rds_controller_role_arn
+  needs:
+    - job: apply-hcp-cluster
+      artifacts: false
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: manual
+  environment:
+    name: ${ENV}
+
+###############################################################################
+# Stage 6: Bootstrap ArgoCD
+###############################################################################
+bootstrap-argocd:
+  stage: bootstrap
+  script:
+    - terraform apply -target=module.argocd_bootstrap -var-file=${TF_VAR_FILE} -auto-approve
+  needs:
+    - job: apply-ack-iam-roles
+      artifacts: false
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: manual
+  environment:
+    name: ${ENV}
+
+###############################################################################
+# Stage 7: Sync GitOps Applications
+###############################################################################
+sync-platform-apps:
+  stage: gitops
+  image: argoproj/argocd:latest
+  before_script:
+    - |
+      # Get ArgoCD credentials from Terraform output or secrets
+      export ARGOCD_SERVER=$(terraform output -raw argocd_server_url || echo "")
+      export ARGOCD_AUTH_TOKEN=${ARGOCD_TOKEN}
+  script:
+    - |
+      argocd app sync platform-apps \
+        --server ${ARGOCD_SERVER} \
+        --auth-token ${ARGOCD_AUTH_TOKEN} \
+        --prune \
+        --timeout 300
+  needs:
+    - job: bootstrap-argocd
+      artifacts: false
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: manual
+  environment:
+    name: ${ENV}
+
+###############################################################################
+# Destroy Jobs (Manual - Protected)
+###############################################################################
+destroy-all:
+  stage: .post
+  script:
+    - terraform destroy -var-file=${TF_VAR_FILE} -auto-approve
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: manual
+  environment:
+    name: ${ENV}
+    action: stop
+  allow_failure: true

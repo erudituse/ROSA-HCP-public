@@ -1,0 +1,154 @@
+# ===========================
+# Terraform
+# ===========================
+# Local .terraform directories
+**/.terraform/*
+
+# .tfstate files
+*.tfstate
+*.tfstate.*
+
+# Crash log files
+crash.log
+crash.*.log
+
+# Exclude all .tfvars files, which are likely to contain sensitive data
+# Uncomment this if you want to exclude tfvars (we keep them as templates)
+# *.tfvars
+# *.tfvars.json
+
+# Override files
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# CLI configuration files
+.terraformrc
+terraform.rc
+
+# Plan files
+*.tfplan
+tfplan
+tfplan.*
+
+# Lock file (optional - can be committed for consistent provider versions)
+# .terraform.lock.hcl
+
+# ===========================
+# Secrets & Credentials
+# ===========================
+# AWS credentials
+.aws/
+credentials
+*.pem
+*.key
+*_rsa
+*_rsa.pub
+*_ed25519
+*_ed25519.pub
+
+# Environment files
+.env
+.env.*
+*.env
+!.env.example
+
+# Secret files
+*secret*
+*secrets*
+!*secret*.yaml.example
+!*secrets*.yaml.example
+*.secret
+credentials.json
+service-account.json
+
+# ===========================
+# Kubernetes
+# ===========================
+# Kubeconfig files
+kubeconfig
+kubeconfig.*
+*.kubeconfig
+
+# Helm
+**/.helmignore
+**/charts/*.tgz
+
+# ===========================
+# IDE & Editors
+# ===========================
+# VSCode
+.vscode/
+*.code-workspace
+
+# JetBrains (IntelliJ, etc.)
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Vim
+*.swp
+*.swo
+*~
+
+# Emacs
+*~
+\#*\#
+.#*
+
+# ===========================
+# OS Generated
+# ===========================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Linux
+*~
+
+# ===========================
+# Logs & Temp Files
+# ===========================
+*.log
+logs/
+tmp/
+temp/
+*.tmp
+*.temp
+
+# ===========================
+# Build & Output
+# ===========================
+dist/
+build/
+out/
+*.out
+
+# ===========================
+# CI/CD
+# ===========================
+# GitLab CI local
+.gitlab-ci-local/
+
+# ===========================
+# Project Specific
+# ===========================
+# Backend config files with real values
+backend.hcl
+backend-*.hcl
+
+# Local override configs
+local.tfvars
+local.auto.tfvars
+*.local.tfvars

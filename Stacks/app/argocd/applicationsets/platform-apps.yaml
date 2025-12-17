@@ -1,0 +1,99 @@
+###############################################################################
+# ArgoCD ApplicationSet: Platform Applications
+# Deploys all platform infrastructure applications
+###############################################################################
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: platform-apps
+  namespace: openshift-gitops
+spec:
+  generators:
+    # List generator for platform applications
+    - list:
+        elements:
+          # Logging Operator
+          - name: logging-operator
+            namespace: openshift-logging
+            path: Stacks/app/manifests/logging-operator
+            syncWave: "1"
+
+          # External Secrets Operator
+          - name: external-secrets
+            namespace: external-secrets
+            path: Stacks/app/manifests/external-secrets
+            syncWave: "2"
+
+          # OADP (OpenShift API for Data Protection)
+          - name: oadp
+            namespace: openshift-adp
+            path: Stacks/app/manifests/oadp
+            syncWave: "3"
+
+          # ACK Controllers (IAM + RDS)
+          - name: ack-controllers
+            namespace: ack-system
+            path: Stacks/app/manifests/ack-controllers
+            syncWave: "4"
+
+  template:
+    metadata:
+      name: '{{name}}'
+      namespace: openshift-gitops
+      annotations:
+        argocd.argoproj.io/sync-wave: '{{syncWave}}'
+      finalizers:
+        - resources-finalizer.argocd.argoproj.io
+    spec:
+      project: platform
+      source:
+        # Update this to your GitLab repository URL
+        repoURL: https://gitlab.com/your-org/rosa-hcp.git
+        targetRevision: main
+        path: '{{path}}'
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: '{{namespace}}'
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+          - PruneLast=true
+          - ApplyOutOfSyncOnly=true
+        retry:
+          limit: 5
+          backoff:
+            duration: 5s
+            factor: 2
+            maxDuration: 3m
+
+---
+###############################################################################
+# ArgoCD Application: Platform Project
+# Ensures the platform project exists
+###############################################################################
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: platform-project
+  namespace: openshift-gitops
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    # Update this to your GitLab repository URL
+    repoURL: https://gitlab.com/your-org/rosa-hcp.git
+    targetRevision: main
+    path: Stacks/app/argocd/projects
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: openshift-gitops
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
